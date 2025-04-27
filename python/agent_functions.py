@@ -4,6 +4,11 @@ import pyflamegpu
 from pyflamegpu import * # Easier access to FLAMEGPU object methods
 import math # For exp function in Fermi rule
 
+
+
+# Assume MAX_NEIGHBORS is defined globally (e.g., MAX_NEIGHBORS = 8)
+MAX_NEIGHBORS = 8 # Ensure this is defined/imported
+
 # -------------------------------------
 # Agent Function 1: Output State
 # -------------------------------------
@@ -104,8 +109,7 @@ def calculate_utility(message_in: pyflamegpu.MessageSpatial2D.Read, agent: pyfla
 
 
 
-# Assume MAX_NEIGHBORS is defined globally (e.g., MAX_NEIGHBORS = 8)
-MAX_NEIGHBORS = 8 # Ensure this is defined/imported
+
 
 # -------------------------------------
 # Agent Function 3: Output Utility
