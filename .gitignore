@@ -6,6 +6,11 @@ __pycache__/
 *.so
 *.pyd
 
+
+#产出数据
+spatial2D/results*/
+
+
 # 虚拟环境和依赖
 .venv/
 venv/

@@ -70,6 +70,64 @@ FLAMEGPU_AGENT_FUNCTION(calculate_utility_func, flamegpu::MessageArray2D, flameg
 }
 """
 
+# Add this new CUDA function string
+calculate_local_metrics_func = r"""
+#include <cmath> // For fabsf
+FLAMEGPU_AGENT_FUNCTION(calculate_local_metrics_func, flamegpu::MessageArray2D, flamegpu::MessageNone) {
+    // Input message: agent_state_message (Strategy & C from t-1)
+    // Note: This function runs after calculate_utility_func, but uses the SAME input message
+    // which contains state from t-1. This is correct for calculating metrics based on the grid state.
+    const int self_ix = FLAMEGPU->getVariable<int>("ix");
+    const int self_iy = FLAMEGPU->getVariable<int>("iy");
+    const unsigned int self_strategy = FLAMEGPU->getVariable<unsigned int>("strategy");
+    const float self_C = FLAMEGPU->getVariable<float>("C");
+    const float C_threshold = 0.5f; // Use a fixed threshold for A/B typing
+    // Determine own type (A or B)
+    const unsigned int self_type = (self_C < C_threshold) ? 1u : 2u; // 1 for A, 2 for B
+    FLAMEGPU->setVariable<unsigned int>("agent_type", self_type); // Store for potential later use/logging
+    unsigned int same_strategy_count = 0;
+    unsigned int same_type_count = 0;
+    unsigned int total_neighbors = 0;
+    bool has_different_neighbor = false;
+    // Iterate through neighbors using wrap(self_ix, self_iy, 1)
+    for (const auto& neighbor_msg : FLAMEGPU->message_in.wrap(self_ix, self_iy, 1)) {
+        total_neighbors++;
+        unsigned int neighbor_strategy = neighbor_msg.getVariable<unsigned int>("strategy");
+        float neighbor_C = neighbor_msg.getVariable<float>("C");
+        // Check strategy similarity
+        if (neighbor_strategy == self_strategy) {
+            same_strategy_count++;
+        }
+        // Check cultural type similarity
+        const unsigned int neighbor_type = (neighbor_C < C_threshold) ? 1u : 2u;
+        if (neighbor_type == self_type) {
+            same_type_count++;
+        } else {
+            has_different_neighbor = true;
+        }
+    }
+    // Store counts
+    FLAMEGPU->setVariable<unsigned int>("same_strategy_neighbors", same_strategy_count);
+    FLAMEGPU->setVariable<unsigned int>("same_type_neighbors", same_type_count);
+    FLAMEGPU->setVariable<unsigned int>("total_neighbors_count", total_neighbors);
+    // Determine if boundary agent
+    FLAMEGPU->setVariable<unsigned int>("is_boundary_agent", has_different_neighbor ? 1u : 0u);
+    // Determine if boundary/bulk cooperator
+    if (self_strategy == 1u) { // If agent is a cooperator
+        if (has_different_neighbor) {
+            FLAMEGPU->setVariable<unsigned int>("is_boundary_cooperator", 1u);
+            FLAMEGPU->setVariable<unsigned int>("is_bulk_cooperator", 0u);
+        } else {
+            FLAMEGPU->setVariable<unsigned int>("is_boundary_cooperator", 0u);
+            FLAMEGPU->setVariable<unsigned int>("is_bulk_cooperator", 1u);
+        }
+    } else { // If agent is a defector
+        FLAMEGPU->setVariable<unsigned int>("is_boundary_cooperator", 0u);
+        FLAMEGPU->setVariable<unsigned int>("is_bulk_cooperator", 0u);
+    }
+    return flamegpu::ALIVE;
+}
+"""
 
 decide_updates_func = r"""
 #include <cmath>  // For expf, fmaxf, fminf
