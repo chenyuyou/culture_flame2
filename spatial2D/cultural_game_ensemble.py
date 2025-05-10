@@ -785,7 +785,14 @@ if __name__ == "__main__":
             np.linspace(4.5, 7.0, 6)
         ))),
     }
-    # Ensure sweep parameters are not in base_params_main if they are swept
+#    sweep_params_config_main = {
+#        'L': [10, 100, 1000],
+#        'b': 
+#
+#            np.linspace(1, 7.0, 13)
+#        ,
+#    }
+#    # Ensure sweep parameters are not in base_params_main if they are swept
     for key in sweep_params_config_main.keys():
         if key in base_params_main:
             del base_params_main[key]

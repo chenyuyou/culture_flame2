@@ -11,6 +11,8 @@ __pycache__/
 spatial2D/results*/
 my_simulation_logs*/
 my_specific_figures*/
+snapshot_output/
+Figure/
 
 # 虚拟环境和依赖
 .venv/
