@@ -9,3 +9,11 @@ python process_logs.py --log_dir my_simulation_logs1 --output_file processed_dat
 
 ## 绘图数据
 python plot_specific_figures.py --data_file my_simulation_logs1/processed_data.pkl --output_dir my_specific_figures1 --plot all
+
+
+# 收集截某step数据
+python cultural_game_simulation_snapshot.py --snapshot_steps 100 500 1000 --steps 2000
+
+或者
+
+python cultural_game_snapshot.py
