@@ -9,7 +9,8 @@ __pycache__/
 
 #产出数据
 spatial2D/results*/
-
+my_simulation_logs*/
+my_specific_figures*/
 
 # 虚拟环境和依赖
 .venv/
