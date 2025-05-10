@@ -12,7 +12,7 @@ import pickle
 import json
 from tqdm import tqdm
 import itertools # Import itertools for parameter sweeps
-
+import argparse # Import argparse for command line arguments
 # Import from the NEW CUDA file with STAGED functions
 from cultural_game_cuda_array import (
     output_state_func,
@@ -322,7 +322,8 @@ class StepFunction(pyflamegpu.HostFunction):
             seg_index_strategy = (2.0 * total_same_strategy_neighbors - total_neighbors_sum) / total_neighbors_sum
             FLAMEGPU.environment.setPropertyFloat("segregation_index_strategy", seg_index_strategy)
             total_same_type_neighbors = FLAMEGPU.agent("CulturalAgent").sumUInt("same_type_neighbors")
-            seg_index_type = (2.0 * total_same_type_neighbors - total_neighbors_sum) / total_neighbors_sum
+#  算法1          seg_index_type = (2.0 * total_same_type_neighbors - total_neighbors_sum) / total_neighbors_sum
+            seg_index_type = float(total_same_type_neighbors) / total_neighbors_sum
             FLAMEGPU.environment.setPropertyFloat("segregation_index_type", seg_index_type)
         else:
             # 如果没有邻居，隔离指数没有意义，设置为 NaN 或 0
@@ -687,26 +688,24 @@ def process_flamegpu_logs(output_directory, params):
     # Return the DataFrame directly. Saving to file will be handled by the main sweep logic.
     return processed_df
 
-# --- Parameter Sweep Execution ---
+# --- Modified Parameter Sweep Execution ---
 def run_parameter_sweep(base_params, sweep_params):
     """
     Runs simulations for all combinations of sweep_params, keeping base_params fixed.
-    Processes logs for each combination and returns a combined DataFrame.
+    Saves raw JSON logs to unique subdirectories. Does NOT process logs.
+    Returns the base output directory.
     """
-    print("\n--- Starting FLAMEGPU2 Parameter Sweep ---")
-
+    print("\n--- Starting FLAMEGPU2 Parameter Sweep (Simulation Run Only) ---")
     sweep_keys = list(sweep_params.keys())
     sweep_values = list(sweep_params.values())
     value_combinations = list(itertools.product(*sweep_values))
-
-    all_sweep_results = []
-
     total_combinations = len(value_combinations)
     print(f"Total parameter combinations to run: {total_combinations}")
-
+    # Determine the base output directory for this sweep
+    base_output_dir = base_params.get("output_directory", "results_flamegpu_sweep")
+    os.makedirs(base_output_dir, exist_ok=True) # Ensure base directory exists
     for i, combo in enumerate(tqdm(value_combinations, desc="Running Sweep Combinations")):
         current_params = base_params.copy()
-        # Update parameters for the current combination
         combo_id_parts = []
         for j, key in enumerate(sweep_keys):
             value = combo[j]
@@ -714,140 +713,69 @@ def run_parameter_sweep(base_params, sweep_params):
             # Create a meaningful ID part (handle floats carefully)
             id_part = f"{key}{value:.4g}" if isinstance(
                 value, float) else f"{key}{value}"
-            combo_id_parts.append(id_part)
-
-        # Generate a unique output directory for this parameter combination
+            combo_id_parts.append(id_part.replace('.', 'p').replace('-', 'm')) # Replace . and - for directory names
+        # Generate a unique output subdirectory for this parameter combination
         combo_output_subdir = "_".join(combo_id_parts)
-        # Ensure the main output directory is used as the base
-        base_output_dir = base_params.get("output_directory", "results_flamegpu_sweep")
         current_params["output_directory"] = os.path.join(base_output_dir, combo_output_subdir)
         os.makedirs(current_params["output_directory"], exist_ok=True) # Ensure subdirectory exists
-
         print(f"\nRunning combination {i+1}/{total_combinations}: {combo_output_subdir}")
-        # Run simulation for this parameter combination
-        output_dir_combo, params_combo = run_simulation(params=current_params)
-
-        # Process logs for this specific combination's output directory
-        if output_dir_combo:
-            # Pass the original base_params to process_flamegpu_logs
-            # so it has access to parameters like steady_state_window
-            processed_df_combo = process_flamegpu_logs(output_dir_combo, params_combo)
-            if not processed_df_combo.empty:
-                 all_sweep_results.append(processed_df_combo)
-            else:
-                 print(f"Warning: No processed data returned for combination: {combo_output_subdir}")
-
-
-    # After running all combinations, concatenate the results
-    if all_sweep_results:
-        combined_sweep_df = pd.concat(all_sweep_results, ignore_index=True)
-        print(f"\nFinished sweep. Combined data from {len(all_sweep_results)} combinations.")
-
-        # --- Add code to save the combined DataFrame as a pickle file ---
-        sweep_output_pkl_path = os.path.join(base_output_dir, "combined_sweep_results.pkl")
+        # --- Setup and Run Simulation for this combination ---
         try:
-            with open(sweep_output_pkl_path, 'wb') as f:
-                pickle.dump(combined_sweep_df, f)
-            print(f"Combined sweep results saved to {sweep_output_pkl_path}")
+            model = create_model()
+            define_environment(model, current_params)
+            define_messages(model, current_params)
+            define_agents(model)
+            define_execution_order(model)
+            init_func_instance = InitFunction(current_params)
+            step_func_instance = StepFunction()
+            model.addInitFunction(init_func_instance)
+            model.addStepFunction(step_func_instance)
+            run_plans = define_run_plans(model, current_params)
+            log_config = define_logs(model)
+            print("Initializing CUDA Ensemble...")
+            ensemble_sim = pyflamegpu.CUDAEnsemble(model)
+            define_output(ensemble_sim, current_params["output_directory"])
+            ensemble_sim.setStepLog(log_config)
+            num_runs = len(run_plans)
+            print(
+                f"--- Starting FLAMEGPU Simulation ({num_runs} runs, {current_params['steps']} steps) ---")
+            start_time = time.time()
+            ensemble_sim.simulate(run_plans)
+            end_time = time.time()
+            print(f"--- Simulation Finished for {combo_output_subdir} ---")
+            print(f"Total execution time: {end_time - start_time:.2f} seconds")
+            print(f"Raw logs saved to: {current_params['output_directory']}")
         except Exception as e:
-            print(f"Error saving combined sweep results: {e}")
-        # --- End of added code ---
-
-
-        return combined_sweep_df # Return the combined DataFrame
-    else:
-        print("\nNo data collected from any sweep combinations.")
-        return pd.DataFrame() # Return empty DataFrame
-
-
-# --- Parameter Sweep Execution ---
-def run_parameter_sweep1(base_params, sweep_params):
-    """
-    Runs simulations for all combinations of sweep_params, keeping base_params fixed.
-    Processes logs for each combination and returns a combined DataFrame.
-    """
-    print("\n--- Starting FLAMEGPU2 Parameter Sweep ---")
-
-    sweep_keys = list(sweep_params.keys())
-    sweep_values = list(sweep_params.values())
-    value_combinations = list(itertools.product(*sweep_values))
-
-    all_sweep_results = []
-
-    total_combinations = len(value_combinations)
-    print(f"Total parameter combinations to run: {total_combinations}")
-
-    for i, combo in enumerate(tqdm(value_combinations, desc="Running Sweep Combinations")):
-        current_params = base_params.copy()
-        # Update parameters for the current combination
-        combo_id_parts = []
-        for j, key in enumerate(sweep_keys):
-            value = combo[j]
-            current_params[key] = value
-            # Create a meaningful ID part (handle floats carefully)
-            id_part = f"{key}{value:.4g}" if isinstance(
-                value, float) else f"{key}{value}"
-            combo_id_parts.append(id_part)
-
-        # Generate a unique output directory for this parameter combination
-        combo_output_subdir = "_".join(combo_id_parts)
-        # Ensure the main output directory is used as the base
-        base_output_dir = base_params.get("output_directory", "results_flamegpu_sweep")
-        current_params["output_directory"] = os.path.join(base_output_dir, combo_output_subdir)
-        os.makedirs(current_params["output_directory"], exist_ok=True) # Ensure subdirectory exists
-
-        print(f"\nRunning combination {i+1}/{total_combinations}: {combo_output_subdir}")
-        # Run simulation for this parameter combination
-        output_dir_combo, params_combo = run_simulation(params=current_params)
-
-        # Process logs for this specific combination's output directory
-        if output_dir_combo:
-            processed_df_combo = process_flamegpu_logs(output_dir_combo, params_combo)
-            if not processed_df_combo.empty:
-                 all_sweep_results.append(processed_df_combo)
-            else:
-                 print(f"Warning: No processed data returned for combination: {combo_output_subdir}")
-
-
-    # After running all combinations, concatenate the results
-    if all_sweep_results:
-        combined_sweep_df = pd.concat(all_sweep_results, ignore_index=True)
-        print(f"\nFinished sweep. Combined data from {len(all_sweep_results)} combinations.")
-
-        # Save the combined DataFrame to a single pickle file in the base output directory
-        sweep_output_pkl_path = os.path.join(base_output_dir, "combined_sweep_results.pkl")
-        try:
-            with open(sweep_output_pkl_path, 'wb') as f:
-                pickle.dump(combined_sweep_df, f)
-            print(f"Combined sweep results saved to {sweep_output_pkl_path}")
-        except Exception as e:
-            print(f"Error saving combined sweep results: {e}")
-
-        return combined_sweep_df # Return the combined DataFrame
-    else:
-        print("\nNo data collected from any sweep combinations.")
-        return pd.DataFrame() # Return empty DataFrame
-
-
+            print(f"Error running simulation for combination {combo_output_subdir}: {e}")
+            import traceback
+            traceback.print_exc()
+            # Continue to the next combination even if one fails
+    print("\n--- All FLAMEGPU2 Simulations for Sweep Finished ---")
+    return base_output_dir # Return the root directory where all subdirectories were created
 # ==========================================================================
-# MAIN EXECUTION BLOCK
+# MAIN EXECUTION BLOCK FOR RUNNING SIMULATIONS
 # ==========================================================================
-
 if __name__ == "__main__":
-    # ==========================================================================
-    # EXAMPLE USAGE: RUNNING SIMULATIONS WITH DIFFERENT PARAMETERS
-    # ==========================================================================
-
-    # --- Configure the main L vs b parameter sweep ---
-    # ... (主扫描的代码，与之前修改的一致) ...
-    print("\n--- Running/Loading Main Scan ---")
-    # ... (调用 run_parameter_sweep 进行主扫描) ...
-    base_sweep_params_main = SIMULATION_PARAMETERS.copy()
-    if 'L' in base_sweep_params_main:
-        del base_sweep_params_main['L']
-    if 'b' in base_sweep_params_main:
-        del base_sweep_params_main['b']
-
+    parser = argparse.ArgumentParser(description="Run FLAMEGPU2 Cultural Game Simulations.")
+    parser.add_argument("--output_dir", type=str, default=SIMULATION_PARAMETERS["output_directory"],
+                        help=f"Base directory to save simulation logs. Default: {SIMULATION_PARAMETERS['output_directory']}")
+    parser.add_argument("--steps", type=int, default=SIMULATION_PARAMETERS["steps"],
+                        help=f"Number of simulation steps per run. Default: {SIMULATION_PARAMETERS['steps']}")
+    parser.add_argument("--num_runs", type=int, default=SIMULATION_PARAMETERS["num_runs"],
+                        help=f"Number of independent runs per parameter set. Default: {SIMULATION_PARAMETERS['num_runs']}")
+    # Add other base parameters if you want to control them from command line
+    # parser.add_argument("--L", type=int, default=SIMULATION_PARAMETERS["L"], help="Grid size L")
+    # parser.add_argument("--b", type=float, default=SIMULATION_PARAMETERS["b"], help="Benefit of cooperation b")
+    # ...
+    args = parser.parse_args()
+    # Update base parameters from command line arguments
+    base_params_main = SIMULATION_PARAMETERS.copy()
+    base_params_main["output_directory"] = args.output_dir
+    base_params_main["steps"] = args.steps
+    base_params_main["num_runs"] = args.num_runs
+    # Update other params if added to parser
+    # Define the parameter sweep configuration
+    # Remove parameters that will be swept from the base params for clarity
     sweep_params_config_main = {
         'L': [20, 30, 40, 50],
         'b': np.unique(np.concatenate((
@@ -857,66 +785,33 @@ if __name__ == "__main__":
             np.linspace(4.5, 7.0, 6)
         ))),
     }
-
-    base_sweep_params_main["num_runs"] = 5
-    base_sweep_params_main["steps"] = 300
-    base_sweep_params_main["steady_state_window"] = 100
-    base_sweep_params_main["output_directory"] = "results_flamegpu_L_b_scan_ensemble"
-
-    combined_sweep_data_main = run_parameter_sweep(base_sweep_params_main, sweep_params_config_main)
-
-    print("\nFLAMEGPU2 main ensemble run and data processing complete.")
-    print(f"Combined main scan data saved to: {os.path.join(base_sweep_params_main['output_directory'], 'combined_sweep_results.pkl')}")
-
-
-    # --- Configure the Phase Diagram parameter sweep ---
-    print("\n--- Configuring Phase Diagram Scan ---")
-    # Define base parameters for the phase diagram scan
-    # These are parameters fixed for the PD scan, including L
-    base_sweep_params_phasediagram = SIMULATION_PARAMETERS.copy()
-    # Remove the two parameters that will be swept in the PD
-    phasediagram_param1_name = 'b' # Example: Scan b
-    phasediagram_param2_name = 'K_C' # Example: Scan K_C
-
-    if phasediagram_param1_name in base_sweep_params_phasediagram:
-        del base_sweep_params_phasediagram[phasediagram_param1_name]
-    if phasediagram_param2_name in base_sweep_params_phasediagram:
-        del base_sweep_params_phasediagram[phasediagram_param2_name]
-
-    # Set the fixed L for the phase diagram
-    phasediagram_L = 40 # Example: Fixed L=40 for PD
-    base_sweep_params_phasediagram['L'] = phasediagram_L
-
-    # Define the parameters to sweep over for the phase diagram
+    # Ensure sweep parameters are not in base_params_main if they are swept
+    for key in sweep_params_config_main.keys():
+        if key in base_params_main:
+            del base_params_main[key]
+    print("\n--- Running Main Scan Simulations ---")
+    main_scan_log_dir = run_parameter_sweep(base_params_main, sweep_params_config_main)
+    print(f"\nMain scan raw logs saved to base directory: '{main_scan_log_dir}'")
+    print(f"You can now run 'python process_logs.py --log_dir {main_scan_log_dir}' to process the logs.")
+#     --- Example for Phase Diagram Scan Simulations ---
+#     You can uncomment and configure this section to run the PD scan
+    print("\n--- Running Phase Diagram Scan Simulations ---")
+    base_params_phasediagram = SIMULATION_PARAMETERS.copy()
+    base_params_phasediagram["L"] = 40 # Fixed L for PD
+    base_params_phasediagram["num_runs"] = 5 # Fewer runs for PD example
+    base_params_phasediagram["steps"] = 3000
+    base_params_phasediagram["output_directory"] = "results_flamegpu_phasediagram_ensemble_raw" # Different output dir
+    phasediagram_param1_name = 'b'
+    phasediagram_param2_name = 'K_C'
     sweep_params_config_phasediagram = {
-        phasediagram_param1_name: np.linspace(1.3, 7.3, 13), # Example b values
-        phasediagram_param2_name: np.geomspace(0.0001, 1.0, num=13), # Example K_C values
+        phasediagram_param1_name: np.linspace(1.3, 7.3, 13),
+        phasediagram_param2_name: np.geomspace(0.0001, 1.0, num=13),
     }
-
-    # Set run-specific parameters for the phase diagram scan
-    # You might use fewer runs for PD than the main scan if needed for speed
-    base_sweep_params_phasediagram["num_runs"] = 5 # Fewer runs for PD example
-    base_sweep_params_phasediagram["steps"] = 3000
-    base_sweep_params_phasediagram["steady_state_window"] = 1000
-    # Define a different output directory for PD results
-    base_sweep_params_phasediagram["output_directory"] = "results_flamegpu_phasediagram_ensemble"
-
-    # --- Run the Phase Diagram parameter sweep ---
-    print("\n--- Running/Loading Phase Diagram Scan ---")
-    combined_sweep_data_phasediagram = run_parameter_sweep(base_sweep_params_phasediagram, sweep_params_config_phasediagram)
-
-    print("\nFLAMEGPU2 phase diagram ensemble run and data processing complete.")
-    print(f"Combined phase diagram data saved to: {os.path.join(base_sweep_params_phasediagram['output_directory'], 'combined_sweep_results.pkl')}")
-
-
-    # --- Note on Snapshot and Cluster Data ---
-    # Snapshot and Cluster Size Distribution data are not generated by these sweeps.
-    # You would need separate logic to run simulations specifically for snapshots
-    # and to collect/process cluster data if needed.
-
-    print("\nOverall FLAMEGPU2 ensemble runs and data processing complete.")
-    print(f"Main scan data in: '{base_sweep_params_main['output_directory']}'")
-    print(f"Phase diagram data in: '{base_sweep_params_phasediagram['output_directory']}'")
-    print("You can now use plot_figures.py to plot the results by loading these files.")
-
-
+    # Ensure sweep parameters are not in base_params_phasediagram
+    for key in sweep_params_config_phasediagram.keys():
+        if key in base_params_phasediagram:
+            del base_params_phasediagram[key]
+    phasediagram_log_dir = run_parameter_sweep(base_params_phasediagram, sweep_params_config_phasediagram)
+    print(f"\nPhase diagram raw logs saved to base directory: '{phasediagram_log_dir}'")
+    print(f"You can now run 'python process_logs.py --log_dir {phasediagram_log_dir}' to process the logs.")
+    print("\nSimulation runs complete. Proceed to process_logs.py to analyze the results.")
