@@ -399,7 +399,7 @@ def plot_boundary_bulk_cooperation_rate_vs_b(df, output_dir="figures", fixed_L=5
 
 # Add these functions to your plot_specific_figures_standalone.py file
 
-def plot_phase_diagram(df, param1_name, param2_name, metric_name, metric_label, title, output_dir="figures"):
+def plot_phase_diagram1(df, param1_name, param2_name, metric_name, metric_label, title, output_dir="figures"):
     """
     Plots a phase diagram (heatmap/contour) of a metric on a 2D parameter plane.
     """
@@ -451,6 +451,79 @@ def plot_phase_diagram(df, param1_name, param2_name, metric_name, metric_label, 
     plt.savefig(fig_path_pdf, dpi=300, bbox_inches='tight')
     print(f"Saved phase diagram to {fig_path_png} and {fig_path_pdf}")
     plt.close()
+
+
+def plot_phase_diagram(df, param1_name, param2_name, metric_name, metric_label, title, output_dir="figures"):
+    """
+    Plots a phase diagram (heatmap/contour) of a metric on a 2D parameter plane.
+    """
+    print(f"\n--- Plotting Phase Diagram: {metric_name} on {param1_name} vs {param2_name} ---")
+    if df.empty:
+        print("No data to plot.")
+        return
+
+    avg_metric_col = f'avg_{metric_name}'
+    required_cols = [param1_name, param2_name, avg_metric_col]
+
+    if not all(col in df.columns for col in required_cols):
+        print(f"Missing required columns for this plot. Need: {required_cols}")
+        return
+
+    # Ensure only one data point per parameter combination for the plot
+    plot_data = df.drop_duplicates(subset=[param1_name, param2_name]).sort_values([param1_name, param2_name])
+
+    if plot_data.empty:
+        print("No unique parameter sets found for plotting phase diagram.")
+        return
+
+    # Pivot the data to create a grid for the contour plot
+    # Use the average metric value for the contour levels
+    pivot_data = plot_data.pivot(index=param2_name, columns=param1_name, values=avg_metric_col)
+
+    if pivot_data.empty:
+        print("Could not pivot data for contour plot.")
+        return
+
+    # Get the unique values for the parameters to define the grid
+    param1_values = pivot_data.columns.values
+    param2_values = pivot_data.index.values
+    metric_values = pivot_data.values
+
+    # Create a meshgrid for the contour plot
+    X, Y = np.meshgrid(param1_values, param2_values)
+
+    plt.figure(figsize=(8, 6)) # Adjust figure size for a phase diagram
+
+    # --- Use contourf for filled contour plot ---
+    # You might want to specify levels for the contour lines
+    # Example: levels = np.linspace(metric_values.min(), metric_values.max(), 20) # 20 levels
+    # Or specify specific levels: levels = [0.1, 0.3, 0.5, 0.7, 0.9]
+    # If levels is not specified, matplotlib will choose automatically.
+    contourf_plot = plt.contourf(X, Y, metric_values, cmap="viridis") # 'viridis' is a good default colormap
+
+    # Optionally, add contour lines on top of the filled contours for better readability
+    # plt.contour(X, Y, metric_values, colors='black', linewidths=0.5)
+
+    # Add a color bar to show the mapping of colors to metric values
+    cbar = plt.colorbar(contourf_plot)
+    cbar.set_label(metric_label)
+
+    plt.xlabel(param1_name)
+    plt.ylabel("$"+param2_name+"$")
+    plt.title(title)
+
+    plt.tight_layout()
+
+    # Save the figure
+    os.makedirs(output_dir, exist_ok=True)
+    # Change filename to reflect contour plot
+    fig_path_png = os.path.join(output_dir, f"phase_diagram_contour_{metric_name.lower()}_vs_{param1_name}_{param2_name}.png")
+    fig_path_pdf = os.path.join(output_dir, f"phase_diagram_contour_{metric_name.lower()}_vs_{param1_name}_{param2_name}.pdf")
+    plt.savefig(fig_path_png, dpi=300, bbox_inches='tight')
+    plt.savefig(fig_path_pdf, dpi=300, bbox_inches='tight')
+    print(f"Saved phase diagram to {fig_path_png} and {fig_path_pdf}")
+    plt.close()
+
 
 
 def plot_phase_diagram_segregation_index_type(df, param1_name, param2_name, output_dir="figures"):
