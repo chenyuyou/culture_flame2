@@ -1,8 +1,4 @@
-# culture_flame2
 
-
-
------
 
 # Effective Utility-Driven Spatial Segregation and Its Impact on Cooperation Evolution: A Cultural Weight-Dependent Perspective
 
