@@ -2,7 +2,7 @@
 
 # Effective Utility-Driven Spatial Segregation and Its Impact on Cooperation Evolution: A Cultural Weight-Dependent Perspective
 
-This repository contains the source code for the agent-based model presented in the paper "Effective Utility-Driven Spatial Segregation and Its Impact on Cooperation Evolution: A Cultural Weight-Dependent Perspective," published in *Chaos, Solitons & Fractals*.
+This repository contains the source code for the agent-based model presented in the paper "Effective Utility-Driven Spatial Segregation and Its Impact on Cooperation Evolution: A Cultural Weight-Dependent Perspective" 
 
 [](https://opensource.org/licenses/MIT)
 
@@ -59,7 +59,7 @@ If you use this code or model in your research, please cite our paper:
 @article{WangChen2025,
   title   = {Effective Utility-Driven Spatial Segregation and Its Impact on Cooperation Evolution: A Cultural Weight-Dependent Perspective},
   author  = {Jinjin Wang and Yuyou Chen},
-  journal = {Chaos, Solitons \& Fractals},
+
   year    = {2025},
   note    = {Preprint submitted on June 12, 2025}
 }
@@ -123,7 +123,7 @@ For any questions, please contact the corresponding author:
 @article{WangChen2025,
   title   = {Effective Utility-Driven Spatial Segregation and Its Impact on Cooperation Evolution: A Cultural Weight-Dependent Perspective},
   author  = {Jinjin Wang and Yuyou Chen},
-  journal = {Chaos, Solitons \& Fractals},
+
   year    = {2025},
   note    = {Preprint submitted on June 12, 2025}
 }
