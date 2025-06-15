@@ -671,7 +671,7 @@ if __name__ == "__main__":
 # 合并所有值并去重
 
     sweep_params_config_main = {
-        'L': [20, 30, 40, 50],
+        'L': [50],
         'b': np.unique(np.concatenate((values_part1, values_part2)))
     }
     # Ensure sweep parameters are not in base_params_main if they are swept
